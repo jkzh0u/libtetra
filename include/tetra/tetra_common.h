@@ -211,6 +211,7 @@ struct tetra_call {
     uint8_t usage_marker; /**< TMO traffic usage marker, 0 if none. */
     uint8_t timeslots;    /**< TMO assigned timeslots, bit 0 = TN1. */
     uint16_t carrier;     /**< TMO allocated carrier, 0xffff = none. */
+    uint32_t carrier_hz;  /**< Its downlink frequency, 0 if unknown. */
     uint32_t dst_ssi;     /**< Called party (group or individual). */
     uint32_t src_ssi;     /**< Calling or talking party. */
     uint32_t mni;         /**< DMO MNI from the MAC header. */

@@ -33,6 +33,9 @@ struct tmo_chan_alloc {
     uint8_t timeslots; /* bitmap, bit 0 = TN1 */
     uint8_t ul_dl;
     uint16_t carrier;
+    bool ext;     /* band and offset below are given */
+    uint8_t band; /* extended carrier numbering */
+    uint8_t offset;
 };
 
 /* MAC header information passed up with a TM-SDU. */

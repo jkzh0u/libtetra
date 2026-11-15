@@ -114,8 +114,13 @@ static bool parse_chan_alloc(struct bitrd *b, struct tmo_chan_alloc *ca)
     ca->ul_dl = (uint8_t)ud;
     br_skip(b, 1 + 1);
     ca->carrier = (uint16_t)br_get(b, 12);
-    if (br_get(b, 1))
-        br_skip(b, 4 + 2 + 3 + 1);
+    ca->ext = br_get(b, 1);
+    if (ca->ext) {
+        /* Extended carrier numbering: band, offset, duplex, reverse */
+        ca->band = (uint8_t)br_get(b, 4);
+        ca->offset = (uint8_t)br_get(b, 2);
+        br_skip(b, 3 + 1);
+    }
     mon = br_get(b, 2);
     if (mon == 0)
         br_skip(b, 2);

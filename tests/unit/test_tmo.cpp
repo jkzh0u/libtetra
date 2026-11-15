@@ -260,6 +260,47 @@ pdu cmce_status(uint32_t src, uint16_t status)
     return p;
 }
 
+/* D-SETUP of a clear group speech call, no optional elements. */
+pdu cmce_setup(uint16_t call_id)
+{
+    pdu p;
+
+    p.put(2, 4);
+    p.put(2, 3);
+    p.put(7, 5); /* D-SETUP */
+    p.put(call_id, 14);
+    p.put(0, 4 + 1 + 1); /* time-out, hook method, simplex */
+    p.put(0x04, 8);      /* BSI: clear speech, point-to-multipoint */
+    p.put(1, 2);         /* transmission not granted */
+    p.put(0, 1);
+    p.put(0, 4); /* priority */
+    p.put(0, 1); /* O-bit */
+    return p;
+}
+
+/*
+ * Channel allocation element for uplink and downlink, without the augmented
+ * part. band < 0: no extended carrier numbering.
+ */
+pdu chan_alloc(unsigned ts, uint16_t carrier, int band, unsigned offset)
+{
+    pdu p;
+
+    p.put(0, 2);  /* replace */
+    p.put(ts, 4); /* timeslot bitmap, TN1 is the MSB */
+    p.put(3, 2);  /* uplink and downlink */
+    p.put(0, 1 + 1);
+    p.put(carrier, 12);
+    p.put(band >= 0, 1);
+    if (band >= 0) {
+        p.put((unsigned)band, 4);
+        p.put(offset, 2);
+        p.put(0, 3 + 1);
+    }
+    p.put(1, 2); /* monitoring pattern */
+    return p;
+}
+
 /* MAC-RESOURCE header (SSI address, no optional elements): 43 bits. */
 void mac_resource(pdu &blk, uint32_t ssi, unsigned li, bool fill)
 {
@@ -295,6 +336,25 @@ void add_resource(pdu &blk, uint32_t ssi, const pdu &sdu)
     bool fill = li * 8 != len;
 
     mac_resource(blk, ssi, li, fill);
+    put_bits(blk, sdu, 0, sdu.n);
+    fill_to(blk, start + li * 8);
+}
+
+/* MAC-RESOURCE with a channel allocation and a TM-SDU. */
+void add_resource_ca(pdu &blk, uint32_t ssi, const pdu &ca, const pdu &sdu)
+{
+    unsigned start = blk.n, len = 43 + ca.n + sdu.n;
+    unsigned li = (len + 7) / 8;
+
+    blk.put(0, 2);
+    blk.put(li * 8 != len, 1);
+    blk.put(0, 1 + 2 + 1);
+    blk.put(li, 6);
+    blk.put(1, 3);
+    blk.put(ssi, 24);
+    blk.put(0, 1 + 1); /* no power control, no slot granting */
+    blk.put(1, 1);     /* channel allocation */
+    put_bits(blk, ca, 0, ca.n);
     put_bits(blk, sdu, 0, sdu.n);
     fill_to(blk, start + li * 8);
 }
@@ -435,6 +495,52 @@ TEST_CASE("TMO receiver handles SYSINFO, association, fragmentation and SDS",
     REQUIRE(c.texts.size() == 2);
     REQUIRE(c.texts[0] == "HI");
     REQUIRE(c.texts[1] == long_text);
+}
+
+TEST_CASE("TMO receiver reports the frequency of a call's carrier", "[tmo]")
+{
+    static capture c;
+    tmo_gen g;
+
+    /* TN3 on carrier 3702, numbered like the cell (band 3, +12.5 kHz) */
+    {
+        pdu blk;
+
+        add_resource_ca(blk, 9001, chan_alloc(0x2, 3702, -1, 0),
+                        cmce_setup(21));
+        g.schf.push_back(finish(blk));
+    }
+    /* TN1 on carrier 1200 with extended numbering: band 4, +6.25 kHz */
+    {
+        pdu blk;
+
+        add_resource_ca(blk, 9002, chan_alloc(0x8, 1200, 4, 1), cmce_setup(22));
+        g.schf.push_back(finish(blk));
+    }
+
+    for (unsigned i = 0; i < 4 * 18 * 2; i++)
+        gen_slot(g);
+
+    init(c);
+    tetra_tmo_push_bits(&c.rx, g.bits.data(), g.bits.size());
+
+    REQUIRE(c.locks == 1);
+    REQUIRE(c.cell.dl_freq_hz == 392512500u);
+    REQUIRE(c.calls.size() == 2);
+
+    REQUIRE(c.calls[0].what == TETRA_CALL_SETUP);
+    REQUIRE(c.calls[0].call_id == 21);
+    REQUIRE(c.calls[0].dst_ssi == 9001);
+    REQUIRE(c.calls[0].group);
+    REQUIRE(c.calls[0].circuit_type == 0);
+    REQUIRE(c.calls[0].timeslots == 0x4);
+    REQUIRE(c.calls[0].carrier == 3702);
+    REQUIRE(c.calls[0].carrier_hz == 392562500u);
+
+    REQUIRE(c.calls[1].call_id == 22);
+    REQUIRE(c.calls[1].timeslots == 0x1);
+    REQUIRE(c.calls[1].carrier == 1200);
+    REQUIRE(c.calls[1].carrier_hz == 430006250u);
 }
 
 TEST_CASE("TMO receiver decodes selected timeslots only", "[tmo][oracle]")

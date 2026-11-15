@@ -49,6 +49,9 @@ struct tetra_tmo_call_state {
     uint8_t priority;
     uint16_t call_id;
     uint16_t carrier;
+    bool carrier_ext; /* carrier_band and carrier_offset are given */
+    uint8_t carrier_band;
+    uint8_t carrier_offset;
     uint16_t idle_frames;
     uint32_t dst_ssi;
     uint32_t talker_ssi;

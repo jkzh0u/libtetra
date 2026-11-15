@@ -101,6 +101,9 @@ static void call_apply_mac(struct tetra_tmo_call_state *c,
     if (mi->has_ca) {
         c->timeslots = mi->ca.timeslots;
         c->carrier = mi->ca.carrier;
+        c->carrier_ext = mi->ca.ext;
+        c->carrier_band = mi->ca.band;
+        c->carrier_offset = mi->ca.offset;
     }
     if (mi->enc)
         c->encrypted = true;
@@ -112,6 +115,21 @@ static void call_apply_bsi(struct tetra_tmo_call_state *c, unsigned bsi)
 {
     c->circuit_type = (uint8_t)(bsi >> 5);
     c->encrypted = c->encrypted || ((bsi >> 4) & 1);
+}
+
+/* Downlink frequency of the call's allocated carrier, 0 if unknown. */
+static uint32_t call_carrier_hz(const struct tetra_tmo_rx *rx,
+                                const struct tetra_tmo_call_state *c)
+{
+    if (c->carrier == 0xffff)
+        return 0;
+    if (c->carrier_ext)
+        return c->carrier_band ? tetra_carrier_hz(c->carrier_band, c->carrier,
+                                                  c->carrier_offset)
+                               : 0;
+    if (!rx->cell.have_sysinfo || !rx->cell.band)
+        return 0;
+    return tetra_carrier_hz(rx->cell.band, c->carrier, rx->cell.offset);
 }
 
 /* Events reported once per call (tetra_tmo_call_state.seen). */
@@ -134,6 +152,7 @@ static void emit_call_st(struct tetra_tmo_rx *rx,
     k->usage_marker = c->usage_marker;
     k->timeslots = c->timeslots;
     k->carrier = c->carrier;
+    k->carrier_hz = call_carrier_hz(rx, c);
     k->dst_ssi = c->dst_ssi;
     k->src_ssi = c->talker_ssi;
     k->group = c->group;
